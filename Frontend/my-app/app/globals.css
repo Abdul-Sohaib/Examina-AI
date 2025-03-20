@@ -1,0 +1,84 @@
+@import url('https://fonts.googleapis.com/css2?family=Jersey+10&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Shadows+Into+Light&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Kranky&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=League+Spartan:wght@100..900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Kalam:wght@300;400;700&display=swap');
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+
+.scroll-container {
+  overflow-y: auto; 
+  scrollbar-width: thin; 
+  scrollbar-color: transparent transparent;
+}
+
+
+.scroll-container::-webkit-scrollbar {
+  width: 0px; 
+  background: transparent; 
+}
+
+
+body {
+  background: var(--foreground);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+  background-image: url('../public/images/dashboardbg.png');
+  object-fit: cover;
+  justify-content: center;
+  align-items: center;
+  overflow-y: hidden;
+}
+.name{
+  background-color: #E4E1E1;
+  font-family: 'Jersey 10', sans-serif;
+  color: #909090;
+}
+.question{
+  font-family: 'Jersey 10', sans-serif;
+}
+.upload{
+  font-family: "Kalam", cursive;
+  font-weight: 400;
+  font-style: normal;
+}
+.explore{
+  font-family: 'Jersey 10', sans-serif;
+}
+.username,.close,.options{
+  font-family: "Shadows Into Light", cursive;
+  font-weight: 400;
+  font-style: normal;
+}
+.generate{
+    font-family: "Kranky", serif;
+    font-weight: 600;
+    font-style: normal;
+    background-color: #D9D9D9;
+    color: black;
+}
+.input-text{
+  font-family: "League Spartan", sans-serif;
+  font-optical-sizing: auto;
+  font-weight: weight;
+  font-style: normal;
+}

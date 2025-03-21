@@ -104,7 +104,7 @@ const Navbar = () => {
             >
               <span className="text-sm username">Welcome, {user?.fullName}!</span>
               <div>
-              <span className="text-red-600 username font-extrabold">
+              <span className="text-red-600 username font-extrabold">Test Score=
   {hasTakenTest && percentage !== null ? `${Math.round(percentage)}%` : "No tests taken"}
 </span>
               </div>

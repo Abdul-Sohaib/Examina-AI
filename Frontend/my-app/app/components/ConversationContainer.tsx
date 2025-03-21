@@ -84,7 +84,7 @@ const ConversationContainer: React.FC<ConversationContainerProps> = ({ showChat,
       {showChat && (
         <motion.div
           initial={{ opacity: 0, y: 0 }}
-          animate={{ opacity: 1, y: -100 }}
+          animate={{ opacity: 1, y: -110 }}
           transition={{ duration: 0.5, ease: "easeOut" }}
           className="flex flex-col w-full p-4 bg-transparent h-[60vh] overflow-y-auto scroll-container rounded-lg -z-30"
         >

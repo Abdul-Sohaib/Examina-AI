@@ -1,19 +1,21 @@
 "use client";
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
+import { MicrophoneIcon } from "@heroicons/react/24/outline";
 import plane from "@/public/images/plane.png";
+import canvus from "@/public/images/canvus.png";
 import { motion, AnimatePresence } from "framer-motion";
 import io from "socket.io-client";
 import { useAuth } from "@clerk/nextjs";
 import ConversationContainer from "./ConversationContainer";
-import canvus from '@/public/images/canvus.png'
 import WhiteCanvas from "./WhiteCanvas";
 
-const socket = io("http://localhost:5000", { transports: ["websocket"] });
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:5000";
+const socket = io(BACKEND_URL, { transports: ["websocket"] });
 
 const options = ["Explain Topic", "Explore Questions", "Start a Test"];
-const testOptions = ["From Existing Paper", "From Current Topic"]; // New options for "Start a Test"
+const testOptions = ["From Existing Paper", "From Current Topic"];
 
 interface Message {
   sender: "User" | "AI" | "Exam-AI";
@@ -25,13 +27,100 @@ const InputField: React.FC = () => {
   const [inputValue, setInputValue] = useState("");
   const [showOptions, setShowOptions] = useState(false);
   const [selectedOption, setSelectedOption] = useState(options[0]);
-  const [showTestOptions, setShowTestOptions] = useState(false); // State for showing test options
+  const [showTestOptions, setShowTestOptions] = useState(false);
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [selectedTestOption, setSelectedTestOption] = useState(testOptions[0]); // State for selected test option
+  const [selectedTestOption, setSelectedTestOption] = useState(testOptions[0]);
   const [showConversationBox, setShowConversationBox] = useState(false);
   const [showCanvas, setShowCanvas] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [speechError, setSpeechError] = useState<string | null>(null);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
   const router = useRouter();
+
+  // Initialize SpeechRecognition
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        setSpeechError("Speech Recognition is not supported in this browser. Please use a modern browser like Chrome.");
+        return;
+      }
+
+      recognitionRef.current = new SpeechRecognition();
+      recognitionRef.current.continuous = false;
+      recognitionRef.current.interimResults = false;
+      recognitionRef.current.lang = "en-US";
+
+      recognitionRef.current.onresult = (event: SpeechRecognitionEvent) => {
+        const transcript = event.results[0][0].transcript;
+        setInputValue(transcript);
+        setIsListening(false);
+      };
+
+      recognitionRef.current.onerror = (event: SpeechRecognitionErrorEvent) => {
+        console.error("Speech recognition error:", event.error);
+        let errorMessage = "Error with speech recognition: ";
+        if (event.error === "network") {
+          errorMessage += "A network error occurred. Please check your internet connection and try again.";
+        } else {
+          errorMessage += event.error;
+        }
+        setSpeechError(errorMessage);
+        setIsListening(false);
+      };
+
+      recognitionRef.current.onend = () => {
+        setIsListening(false);
+      };
+    }
+  }, []);
+
+  // Handle speech input
+  const handleSpeechInput = () => {
+    if (!recognitionRef.current) {
+      setSpeechError("Speech Recognition is not supported in this browser.");
+      return;
+    }
+
+    if (isLoading) return;
+
+    if (isListening) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+    } else {
+      setSpeechError(null);
+      setIsListening(true);
+      recognitionRef.current.start();
+    }
+  };
+
+  // Handle text-to-speech
+  const speakText = (text: string) => {
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = "en-US";
+      utterance.onstart = () => setIsSpeaking(true);
+      utterance.onend = () => setIsSpeaking(false);
+      utterance.onerror = (event) => {
+        console.error("Speech synthesis error:", event.error);
+        setSpeechError("Error with speech synthesis: " + event.error);
+        setIsSpeaking(false);
+      };
+      window.speechSynthesis.speak(utterance);
+    } else {
+      setSpeechError("Speech Synthesis is not supported in this browser.");
+    }
+  };
+
+  // Stop speaking
+  const stopSpeaking = () => {
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+      setIsSpeaking(false);
+    }
+  };
 
   const handleSend = async (addMessage: (message: Message) => void) => {
     if (!inputValue.trim() || !userId) return;
@@ -44,7 +133,6 @@ const InputField: React.FC = () => {
     };
 
     if (selectedOption === "Start a Test") {
-      // Show the test options dropdown instead of immediately redirecting
       setShowTestOptions(true);
       setIsLoading(false);
       return;
@@ -57,12 +145,12 @@ const InputField: React.FC = () => {
 
     try {
       const [chatResponse, historyResponse] = await Promise.all([
-        fetch("http://localhost:5000/api/chats", {
+        fetch(`${BACKEND_URL}/api/chats`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ userId, message: inputValue, mode: selectedOption }),
         }),
-        fetch("http://localhost:5000/api/searchhistory/save", {
+        fetch(`${BACKEND_URL}/api/searchhistory/save`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ userId, query: inputValue, option: selectedOption }),
@@ -83,9 +171,9 @@ const InputField: React.FC = () => {
       }
 
       if (historyResponse.ok) {
-        console.log("✅ Search history saved successfully.");
+        console.log(" Search history saved successfully.");
       } else {
-        console.warn("⚠️ Failed to save search history.");
+        console.warn(" Failed to save search history.");
       }
     } catch (error) {
       console.error("Error sending message:", error);
@@ -97,7 +185,6 @@ const InputField: React.FC = () => {
     }
   };
 
-  // Handle test option selection
   const handleTestOptionSelect = (option: string) => {
     setSelectedTestOption(option);
     setShowTestOptions(false);
@@ -110,6 +197,11 @@ const InputField: React.FC = () => {
 
     setInputValue("");
     setIsLoading(false);
+  };
+
+  // Callback to handle AI response and speak it
+  const handleAIResponse = (response: string) => {
+    speakText(response);
   };
 
   return (
@@ -174,7 +266,6 @@ const InputField: React.FC = () => {
               )}
             </AnimatePresence>
 
-            {/* New Test Options Dropdown */}
             <AnimatePresence>
               {showTestOptions && (
                 <motion.div
@@ -199,45 +290,78 @@ const InputField: React.FC = () => {
               )}
             </AnimatePresence>
           </div>
-          <div className="flex justify-center items-center gap-4">          
-            <button className="rounded-full border-1 border-black cursor-pointer" onClick={() => setShowCanvas(true)}>
-          <Image src={canvus} alt="Canvus" className="w-10 p-2" />
-          </button>
 
-          <button
-            className={`p-2 font-bold border rounded-md text-lg tracking-wide generate transition flex items-center justify-center ${
-              inputValue.trim() && !isLoading
-                ? "hover:bg-gray-300 cursor-pointer"
-                : "text-gray-400 cursor-not-allowed"
-            }`}
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
-            onClick={() => handleSend((message) => {})}
-            disabled={!inputValue.trim() || isLoading}
-          >
-            {isLoading ? (
-              <motion.div
-                className="flex gap-1"
-                initial={{ opacity: 1 }}
-                animate={{ opacity: [1, 0.5, 1] }}
-                transition={{ repeat: Infinity, duration: 1 }}
-              >
-                <div className="w-2 h-2 bg-black rounded-full"></div>
-                <div className="w-2 h-2 bg-black rounded-full"></div>
-                <div className="w-2 h-2 bg-black rounded-full"></div>
-              </motion.div>
-            ) : (
-              "Generate"
-            )}
-          </button>
+          <div className="flex justify-center items-center gap-4">
+            <button
+              className="rounded-full border-1 border-black cursor-pointer"
+              onClick={() => setShowCanvas(true)}
+            >
+              <Image src={canvus} alt="Canvus" className="w-10 p-2" />
+            </button>
+
+            <button
+              onClick={handleSpeechInput}
+              className={`p-2 rounded-full border border-black ${
+                isListening ? "bg-red-500" : "bg-blue-500"
+              } text-white ${isLoading ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}
+              disabled={isLoading}
+              title={isListening ? "Stop Listening" : "Start Speaking"}
+            >
+              <MicrophoneIcon className="h-6 w-6" />
+            </button>
+
+            <button
+              className={`p-2 font-bold border rounded-md text-lg tracking-wide generate transition flex items-center justify-center ${
+                inputValue.trim() && !isLoading
+                  ? "hover:bg-gray-300 cursor-pointer"
+                  : "text-gray-400 cursor-not-allowed"
+              }`}
+              // eslint-disable-next-line @typescript-eslint/no-unused-vars
+              onClick={() => handleSend((message) => {})}
+              disabled={!inputValue.trim() || isLoading}
+            >
+              {isLoading ? (
+                <motion.div
+                  className="flex gap-1"
+                  initial={{ opacity: 1 }}
+                  animate={{ opacity: [1, 0.5, 1] }}
+                  transition={{ repeat: Infinity, duration: 1 }}
+                >
+                  <div className="w-2 h-2 bg-black rounded-full"></div>
+                  <div className="w-2 h-2 bg-black rounded-full"></div>
+                  <div className="w-2 h-2 bg-black rounded-full"></div>
+                </motion.div>
+              ) : (
+                "Generate"
+              )}
+            </button>
           </div>
-
         </div>
+
+        {speechError && (
+          <div className="mt-2 text-red-500 text-sm">{speechError}</div>
+        )}
+        {isSpeaking && (
+          <div className="mt-2 flex items-center gap-2">
+            <span className="text-gray-500 text-sm">AI is speaking...</span>
+            <button
+              onClick={stopSpeaking}
+              className="text-red-500 text-sm hover:underline"
+            >
+              Stop Speaking
+            </button>
+          </div>
+        )}
       </motion.div>
 
       <div className="w-full">
         <AnimatePresence>
           {showConversationBox && (
-            <ConversationContainer showChat={showConversationBox} onSendMessage={handleSend} />
+            <ConversationContainer
+              showChat={showConversationBox}
+              onSendMessage={handleSend}
+              onAIResponse={handleAIResponse}
+            />
           )}
         </AnimatePresence>
       </div>

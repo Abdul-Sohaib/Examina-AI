@@ -16,20 +16,21 @@ const rateLimit = require("express-rate-limit");
 
 const mongoURI = process.env.MONGO_URI;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
 
 if (!mongoURI) {
-  console.error("❌ Error: MONGO_URI is missing in .env file");
+  console.error(" Error: MONGO_URI is missing in .env file");
   process.exit(1);
 }
 if (!GEMINI_API_KEY) {
-  console.warn("⚠ Warning: GEMINI_API_KEY is missing. AI responses may not work.");
+  console.warn("Warning: GEMINI_API_KEY is missing. AI responses may not work.");
 }
 
 mongoose
   .connect(mongoURI, { useNewUrlParser: true, useUnifiedTopology: true })
-  .then(() => console.log("✅ MongoDB Connected!"))
+  .then(() => console.log(" MongoDB Connected!"))
   .catch((err) => {
-    console.error("❌ MongoDB Connection Error:", err.message);
+    console.error(" MongoDB Connection Error:", err.message);
     process.exit(1);
   });
 
@@ -66,10 +67,10 @@ const TestResult = mongoose.model("TestResult", testResultSchema);
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: { origin: "http://localhost:3000", methods: ["GET", "POST"], credentials: true },
+  cors: { origin: FRONTEND_URL, methods: ["GET", "POST"], credentials: true },
 });
 
-app.use(cors({ origin: "http://localhost:3000", credentials: true }));
+app.use(cors({ origin: FRONTEND_URL, credentials: true }));
 app.use(express.json());
 app.use("/api/searchHistory", searchHistoryRoutes);
 app.use("/api", chatRoutes);
@@ -133,11 +134,31 @@ app.post("/api/upload-question-paper", upload.single("file"), async (req, res) =
       paperId: paper._id.toString(),
     });
   } catch (error) {
-    console.error("❌ Error uploading question paper:", error.message);
+    console.error(" Error uploading question paper:", error.message);
     res.status(500).json({ error: "An error occurred while uploading the question paper." });
   }
 });
 
+// Endpoint to handle chat messages via HTTP
+app.post("/api/send-message", async (req, res) => {
+  try {
+    const { userId, message, mode } = req.body;
+
+    if (!userId || !message?.trim() || !mode) {
+      return res.status(400).json({ error: "userId, message, and mode are required." });
+    }
+
+    const aiResponse = await handleChatRequest(userId, message, mode);
+    if (!aiResponse?.answer) {
+      return res.status(500).json({ error: "Failed to generate AI response." });
+    }
+
+    res.status(200).json({ answer: aiResponse.answer });
+  } catch (error) {
+    console.error(" Error handling chat message via HTTP:", error.message);
+    res.status(500).json({ error: "An internal error occurred. Try again later." });
+  }
+});
 // Endpoint to save canvas drawings
 app.post("/api/save-canvas", async (req, res) => {
   try {
@@ -155,7 +176,7 @@ app.post("/api/save-canvas", async (req, res) => {
 
     res.status(200).json({ message: "Canvas drawing saved successfully." });
   } catch (error) {
-    console.error("❌ Error saving canvas drawing:", error.message);
+    console.error(" Error saving canvas drawing:", error.message);
     res.status(500).json({ error: "An error occurred while saving the canvas drawing." });
   }
 });
@@ -175,7 +196,7 @@ app.get("/api/get-canvas", async (req, res) => {
 
     res.status(200).json({ canvasData: drawing.canvasData });
   } catch (error) {
-    console.error("❌ Error fetching canvas drawing:", error.message);
+    console.error(" Error fetching canvas drawing:", error.message);
     res.status(500).json({ error: "An error occurred while fetching the canvas drawing." });
   }
 });
@@ -199,7 +220,7 @@ app.post("/api/save-test-result", async (req, res) => {
 
     res.status(200).json({ message: "Test result saved successfully." });
   } catch (error) {
-    console.error("❌ Error saving test result:", error.message);
+    console.error(" Error saving test result:", error.message);
     res.status(500).json({ error: "An error occurred while saving the test result." });
   }
 });
@@ -219,7 +240,7 @@ app.get("/api/get-test-result", async (req, res) => {
 
     res.status(200).json({ percentage: testResult.percentage });
   } catch (error) {
-    console.error("❌ Error fetching test result:", error.message);
+    console.error(" Error fetching test result:", error.message);
     res.status(500).json({ error: "An error occurred while fetching the test result." });
   }
 });
@@ -235,14 +256,14 @@ app.get("/api/test-history", async (req, res) => {
     const testHistory = await TestResult.find({ userId }).sort({ createdAt: -1 });
     res.status(200).json({ history: testHistory });
   } catch (error) {
-    console.error("❌ Error fetching test history:", error.message);
+    console.error(" Error fetching test history:", error.message);
     res.status(500).json({ error: "An error occurred while fetching the test history." });
   }
 });
 
 // Initialize Gemini API
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
 // Endpoint to fetch questions based on paperId or topic
 app.get("/api/questions", async (req, res) => {
@@ -356,13 +377,13 @@ app.get("/api/questions", async (req, res) => {
       return res.status(400).json({ error: "Either paperId or topic is required." });
     }
   } catch (error) {
-    console.error("❌ Error fetching questions:", error.message);
+    console.error(" Error fetching questions:", error.message);
     res.status(500).json({ error: "An error occurred while fetching questions." });
   }
 });
 
 io.on("connection", (socket) => {
-  console.log(`✅ User connected: ${socket.id}`);
+  console.log(` User connected: ${socket.id}`);
 
   socket.on("sendMessage", async (data) => {
     try {

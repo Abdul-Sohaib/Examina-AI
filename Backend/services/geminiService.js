@@ -1,10 +1,31 @@
-const axios = require("axios");
+const { GoogleGenerativeAI } = require("@google/generative-ai");
+
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 const fetchGeminiResponse = async (prompt) => {
   try {
     if (!GEMINI_API_KEY) {
       throw new Error("Missing GEMINI_API_KEY. Check your environment variables.");
+    }
+
+    // Initialize Gemini API
+    const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+    let model;
+    try {
+      // Attempt to use gemini-2.5-flash (free-tier compatible)
+      model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    } catch (error) {
+      console.warn("⚠ Warning: gemini-2.5-flash not available. Listing available models for debugging.");
+
+      // List available models
+      try {
+        const models = await genAI.listModels();
+        console.log("Available models:", models.map(m => m.name));
+      } catch (listError) {
+        console.error("Failed to list models:", listError.message);
+      }
+
+      throw new Error("No suitable model available. Please check API key permissions or available models.");
     }
 
     // Add system instruction to restrict to education-related topics
@@ -16,22 +37,10 @@ const fetchGeminiResponse = async (prompt) => {
     // Combine system instruction with user prompt
     const fullPrompt = `${systemInstruction}\n\nUser: ${prompt}`;
 
-    const requestBody = {
-      contents: [
-        {
-          role: "user",
-          parts: [{ text: fullPrompt }]
-        }
-      ]
-    };
-
-    const response = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${GEMINI_API_KEY}`,
-      requestBody,
-      { headers: { "Content-Type": "application/json" } }
-    );
-
-    let aiResponse = response.data?.candidates?.[0]?.content?.parts?.[0]?.text || "No response from AI";
+    // Generate content using the SDK
+    const result = await model.generateContent(fullPrompt);
+    const response = await result.response;
+    let aiResponse = response.text();
 
     // Remove asterisks (*) and format the response
     aiResponse = aiResponse
@@ -44,7 +53,11 @@ const fetchGeminiResponse = async (prompt) => {
     return aiResponse;
 
   } catch (error) {
-    console.error("Gemini API Error:", error?.response?.data || error.message);
+    console.error("Gemini API Error:", {
+      message: error.message,
+      stack: error.stack,
+      details: error?.response?.data || "No additional error details",
+    });
     return "Failed to fetch response from Gemini API";
   }
 };

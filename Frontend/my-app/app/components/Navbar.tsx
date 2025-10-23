@@ -11,7 +11,7 @@ const Navbar = () => {
   const { user } = useUser();
   const [percentage, setPercentage] = useState<number | null>(null);
   const [hasTakenTest, setHasTakenTest] = useState<boolean>(true); // Track if the user has taken a test
-
+  const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:5000";
   useEffect(() => {
     const fetchTestResult = async () => {
       if (!user) {
@@ -28,7 +28,7 @@ const Navbar = () => {
 
       console.log("Fetching test result for userId:", user.id);
       try {
-        const response = await fetch(`http://localhost:5000/api/get-test-result?userId=${user.id}`);
+        const response = await fetch(`${BACKEND_URL}/api/get-test-result?userId=${user.id}`);
         if (!response.ok) {
           if (response.status === 404) {
             console.log("No test result found for this user.");
@@ -57,7 +57,7 @@ const Navbar = () => {
     };
 
     fetchTestResult();
-  }, [user]);
+  }, [BACKEND_URL, user]);
 
   return (
     <SignedIn>

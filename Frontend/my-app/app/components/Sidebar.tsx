@@ -15,27 +15,27 @@ const Sidebar = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchHistory, setSearchHistory] = useState<SearchHistoryItem[]>([]);
   const { userId } = useAuth();
-
+  const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:5000";
   // Function to fetch search history
   const fetchHistory = useCallback(async () => {
     if (!userId) return;
 
     try {
       console.log("🔍 Fetching search history for user:", userId);
-      const res = await fetch(`http://localhost:5000/api/searchHistory/latest/${userId}`);
+      const res = await fetch(`${BACKEND_URL}/api/searchHistory/latest/${userId}`);
       
       if (!res.ok) {
-        console.error(`❌ API error! Status: ${res.status}`);
+        console.error(` API error! Status: ${res.status}`);
         return;
       }
 
       const data = await res.json();
-      console.log("✅ Search history fetched:", data);
+      console.log(" Search history fetched:", data);
       setSearchHistory(Array.isArray(data) ? data : []);
     } catch (error) {
-      console.error("❌ Error fetching search history:", error);
+      console.error(" Error fetching search history:", error);
     }
-  }, [userId]);
+  }, [BACKEND_URL, userId]);
 
   // Fetch history on component mount & when userId changes
   useEffect(() => {

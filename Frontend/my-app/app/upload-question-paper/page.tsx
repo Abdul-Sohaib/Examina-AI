@@ -10,6 +10,7 @@ const UploadQuestionPaperPage: React.FC = () => {
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:5000";
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -31,7 +32,7 @@ const UploadQuestionPaperPage: React.FC = () => {
     formData.append("userId", userId);
 
     try {
-      const response = await fetch("http://localhost:5000/api/upload-question-paper", {
+      const response = await fetch(`${BACKEND_URL}/api/upload-question-paper`, {
         method: "POST",
         body: formData,
       });

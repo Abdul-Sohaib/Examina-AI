@@ -1,5 +1,5 @@
 "use client";
-import{ useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import io from "socket.io-client";
 
@@ -10,14 +10,15 @@ interface Message {
 
 interface ConversationContainerProps {
   showChat: boolean;
-  onSendMessage: (addMessage: (message: Message) => void) => void; // Callback to handle sending messages
+  onSendMessage: (addMessage: (message: Message) => void) => void;
+  onAIResponse?: (response: string) => void; // New prop to pass AI response
 }
-
-const socket = io("http://localhost:5000");
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:5000";
+const socket = io(BACKEND_URL);
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-const ConversationContainer: React.FC<ConversationContainerProps> = ({ showChat, onSendMessage }) => {
-  const [messages, setMessages] = useState<Message[]>([]); // Single source of truth for all messages
+const ConversationContainer: React.FC<ConversationContainerProps> = ({ showChat, onSendMessage, onAIResponse }) => {
+  const [messages, setMessages] = useState<Message[]>([]);
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [isTyping, setIsTyping] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -48,6 +49,16 @@ const ConversationContainer: React.FC<ConversationContainerProps> = ({ showChat,
             .map((line) => line.trim())
             .filter((line) => line !== "");
 
+          // Speak each line with a delay to match the display
+          if (onAIResponse) {
+            formattedLines.forEach((line, index) => {
+              setTimeout(() => {
+                onAIResponse(line); // Pass each line to InputField.tsx to be spoken
+              }, index * 500);
+            });
+          }
+
+          // Display each line with a delay
           formattedLines.forEach((line, index) => {
             setTimeout(() => {
               setMessages((prev) => {
@@ -69,7 +80,7 @@ const ConversationContainer: React.FC<ConversationContainerProps> = ({ showChat,
     return () => {
       socket.off("receiveMessage");
     };
-  }, []);
+  }, [onAIResponse]); // Add onAIResponse to dependencies
 
   useEffect(() => {
     if (messages.length > 0 && scrollRef.current) {

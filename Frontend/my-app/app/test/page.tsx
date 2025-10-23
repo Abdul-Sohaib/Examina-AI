@@ -24,13 +24,13 @@ const TestPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [correctAnswers, setCorrectAnswers] = useState<number>(0);
   const [userAnswers, setUserAnswers] = useState<(string | null)[]>([]);
-
+  const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:5000";
   useEffect(() => {
     const fetchQuestions = async () => {
       setIsLoading(true);
       setError(null);
       try {
-        let url = "http://localhost:5000/api/questions";
+        let url = `${BACKEND_URL}/api/questions`;
         if (paperId) {
           url += `?paperId=${paperId}&questionCount=30`;
         } else if (topic) {
@@ -93,7 +93,7 @@ const TestPage: React.FC = () => {
     };
 
     fetchQuestions();
-  }, [paperId, questions.length, topic]);
+  }, [BACKEND_URL, paperId, questions.length, topic]);
 
   const handleStartTest = (minutes: number) => {
     const questionCount = minutes === 5 ? 15 : 30;
@@ -184,7 +184,7 @@ const TestPage: React.FC = () => {
     const percentage = (correctAnswers / questions.length) * 100;
     console.log("Saving test result:", { userId: user.id, percentage, topic, paperId });
     try {
-      const response = await fetch("http://localhost:5000/api/save-test-result", {
+      const response = await fetch(`${BACKEND_URL}/api/save-test-result`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId: user.id, percentage, topic, paperId }),

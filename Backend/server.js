@@ -16,7 +16,7 @@ const rateLimit = require("express-rate-limit");
 
 const mongoURI = process.env.MONGO_URI;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
+const FRONTEND_URL = process.env.FRONTEND_URL || "https://examina-ai-silk.vercel.app";
 
 if (!mongoURI) {
   console.error(" Error: MONGO_URI is missing in .env file");

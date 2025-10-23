@@ -67,44 +67,64 @@ const TestResult = mongoose.model("TestResult", testResultSchema);
 const app = express();
 const server = http.createServer(app);
 
-// Updated Socket.IO configuration for Vercel compatibility
+// Define allowed origins
 const allowedOrigins = [
   FRONTEND_URL,
   "https://examina-ai-t2ad.vercel.app",
-  "http://localhost:3000" // For local development
+  "http://localhost:3000", // For local development
 ];
 
+// Apply CORS middleware first
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        console.error(`CORS blocked request from origin: ${origin}`);
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
+    methods: ["GET", "POST", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: true,
+    optionsSuccessStatus: 204,
+  })
+);
+
+// Handle preflight OPTIONS requests for all routes
+app.options("*", cors());
+
+// Socket.IO configuration with polling-only for Vercel
 const io = new Server(server, {
+  path: "/socket.io/",
   cors: {
     origin: (origin, callback) => {
       if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
+        console.error(`Socket.IO CORS blocked request from origin: ${origin}`);
         callback(new Error("Not allowed by CORS"));
       }
     },
-    methods: ["GET", "POST"],
+    methods: ["GET", "POST", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true,
   },
-  transports: ["polling", "websocket"], // Prioritize polling for Vercel
+  transports: ["polling"], // Force polling to avoid WebSocket issues on Vercel
   allowEIO3: true, // Support for Socket.IO v3 clients
+  pingTimeout: 30000, // Increased timeout for serverless
+  pingInterval: 25000,
+  maxHttpBufferSize: 1e6, // 1MB buffer to handle large payloads
 });
 
-// Enhanced CORS for Express
-app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error("Not allowed by CORS"));
-    }
-  },
-  credentials: true,
-  methods: ["GET", "POST", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
-}));
+// Debug Socket.IO errors
+io.on("error", (error) => {
+  console.error("Socket.IO global error:", error.message, error.stack);
+});
 
-app.use(express.json());
+// Apply other middlewares
+app.use(express.json({ limit: "10mb" })); // Increase payload limit
 app.use("/api/searchHistory", searchHistoryRoutes);
 app.use("/api", chatRoutes);
 
@@ -167,7 +187,7 @@ app.post("/api/upload-question-paper", upload.single("file"), async (req, res) =
       paperId: paper._id.toString(),
     });
   } catch (error) {
-    console.error(" Error uploading question paper:", error.message);
+    console.error("Error uploading question paper:", error.message, error.stack);
     res.status(500).json({ error: "An error occurred while uploading the question paper." });
   }
 });
@@ -188,7 +208,7 @@ app.post("/api/send-message", async (req, res) => {
 
     res.status(200).json({ answer: aiResponse.answer });
   } catch (error) {
-    console.error(" Error handling chat message via HTTP:", error.message);
+    console.error("Error handling chat message via HTTP:", error.message, error.stack);
     res.status(500).json({ error: "An internal error occurred. Try again later." });
   }
 });
@@ -210,7 +230,7 @@ app.post("/api/save-canvas", async (req, res) => {
 
     res.status(200).json({ message: "Canvas drawing saved successfully." });
   } catch (error) {
-    console.error(" Error saving canvas drawing:", error.message);
+    console.error("Error saving canvas drawing:", error.message, error.stack);
     res.status(500).json({ error: "An error occurred while saving the canvas drawing." });
   }
 });
@@ -230,7 +250,7 @@ app.get("/api/get-canvas", async (req, res) => {
 
     res.status(200).json({ canvasData: drawing.canvasData });
   } catch (error) {
-    console.error(" Error fetching canvas drawing:", error.message);
+    console.error("Error fetching canvas drawing:", error.message, error.stack);
     res.status(500).json({ error: "An error occurred while fetching the canvas drawing." });
   }
 });
@@ -254,7 +274,7 @@ app.post("/api/save-test-result", async (req, res) => {
 
     res.status(200).json({ message: "Test result saved successfully." });
   } catch (error) {
-    console.error(" Error saving test result:", error.message);
+    console.error("Error saving test result:", error.message, error.stack);
     res.status(500).json({ error: "An error occurred while saving the test result." });
   }
 });
@@ -274,7 +294,7 @@ app.get("/api/get-test-result", async (req, res) => {
 
     res.status(200).json({ percentage: testResult.percentage });
   } catch (error) {
-    console.error(" Error fetching test result:", error.message);
+    console.error("Error fetching test result:", error.message, error.stack);
     res.status(500).json({ error: "An error occurred while fetching the test result." });
   }
 });
@@ -290,7 +310,7 @@ app.get("/api/test-history", async (req, res) => {
     const testHistory = await TestResult.find({ userId }).sort({ createdAt: -1 });
     res.status(200).json({ history: testHistory });
   } catch (error) {
-    console.error(" Error fetching test history:", error.message);
+    console.error("Error fetching test history:", error.message, error.stack);
     res.status(500).json({ error: "An error occurred while fetching the test history." });
   }
 });
@@ -396,7 +416,7 @@ app.get("/api/questions", async (req, res) => {
           const generatedQuestions = JSON.parse(text);
           questions = generatedQuestions.questions || [];
         } catch (parseError) {
-          console.error("Failed to parse Gemini response:", parseError.message);
+          console.error("Failed to parse Gemini response:", parseError.message, parseError.stack);
           console.error("Raw response:", text);
           questions = Array.from({ length: numQuestions }, (_, i) => ({
             question: `Fallback Question ${i + 1} about ${decodedTopic}`,
@@ -411,17 +431,16 @@ app.get("/api/questions", async (req, res) => {
       return res.status(400).json({ error: "Either paperId or topic is required." });
     }
   } catch (error) {
-    console.error(" Error fetching questions:", error.message);
+    console.error("Error fetching questions:", error.message, error.stack);
     res.status(500).json({ error: "An error occurred while fetching questions." });
   }
 });
 
 io.on("connection", (socket) => {
-  console.log(` User connected: ${socket.id}, Origin: ${socket.handshake.headers.origin}`);
+  console.log(`User connected: ${socket.id}, Origin: ${socket.handshake.headers.origin}, Transport: ${socket.conn.transport.name}`);
 
-  // Debug connection issues
   socket.on("connect_error", (error) => {
-    console.error(` Connection error for socket ${socket.id}:`, error.message);
+    console.error(`Connection error for socket ${socket.id}: ${error.message}, Transport: ${socket.conn.transport.name}`, error.stack);
   });
 
   socket.on("sendMessage", async (data) => {
@@ -429,7 +448,7 @@ io.on("connection", (socket) => {
       const { userId, message, mode } = data;
 
       if (!userId || !message?.trim() || !mode) {
-        console.error("❌ Missing required fields:", { userId, message, mode });
+        console.error("Missing required fields:", { userId, message, mode });
         socket.emit("errorMessage", { error: "Message, userId, and mode are required." });
         return;
       }
@@ -446,14 +465,20 @@ io.on("connection", (socket) => {
         socket.emit("errorMessage", { error: "Failed to generate AI response." });
       }
     } catch (error) {
-      console.error("❌ Error handling chat message:", error.message);
+      console.error("Error handling chat message:", error.message, error.stack);
       socket.emit("errorMessage", { error: "An internal error occurred. Try again later." });
     }
   });
 
-  socket.on("disconnect", () => {
-    console.log(`❌ User disconnected: ${socket.id}`);
+  socket.on("disconnect", (reason) => {
+    console.log(`User disconnected: ${socket.id}, Reason: ${reason}`);
   });
+});
+
+// Global error handler
+app.use((err, req, res, next) => {
+  console.error(`Global error on ${req.method} ${req.url}:`, err.message, err.stack);
+  res.status(500).json({ error: "An internal server error occurred." });
 });
 
 // Use Vercel's PORT environment variable

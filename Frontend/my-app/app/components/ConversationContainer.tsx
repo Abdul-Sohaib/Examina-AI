@@ -1,6 +1,6 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+
 "use client";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import io from "socket.io-client";
 
@@ -12,87 +12,126 @@ interface Message {
 interface ConversationContainerProps {
   showChat: boolean;
   onSendMessage: (addMessage: (message: Message) => void) => void;
-  onAIResponse?: (response: string) => void; // New prop to pass AI response
+  onAIResponse?: (response: string) => void;
 }
+
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:5000";
-const socket = io(BACKEND_URL, {
-  transports: ['polling', 'websocket'], // Prioritize polling
-});
 
-socket.on('connect', () => {
-  console.log('Socket connected:', socket.id);
-});
-
-socket.on('connect_error', (error: { message: any; }) => {
-  console.error('Socket connection error:', error.message);
-});
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const ConversationContainer: React.FC<ConversationContainerProps> = ({ showChat, onSendMessage, onAIResponse }) => {
+const ConversationContainer: React.FC<ConversationContainerProps> = ({ 
+  showChat, 
+  onSendMessage, 
+  onAIResponse 
+}) => {
   const [messages, setMessages] = useState<Message[]>([]);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [isTyping, setIsTyping] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const socketRef = useRef<ReturnType<typeof io> | null>(null);
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const addMessage = (message: Message) => {
-    setMessages((prev) => [...prev, message]);
-  };
+  // Initialize socket once
+useEffect(() => {
+  socketRef.current = io(BACKEND_URL, {
+    path: "/socket.io/",
+    transports: ["polling"], // Force polling only
+    upgrade: false, // Explicitly disable WebSocket upgrade
+    reconnection: true,
+    reconnectionAttempts: 5,
+    reconnectionDelay: 1000,
+    reconnectionDelayMax: 5000,
+    timeout: 30000,
+  });
 
-  useEffect(() => {
-    if (!socket) return;
+  const socket = socketRef.current;
 
-    socket.off("receiveMessage"); // Prevent duplicate listeners
-    socket.on("receiveMessage", (newMessage: Message) => {
-      console.log("📩 Received message from socket:", newMessage);
+  socket.on("connect", () => {
+    console.log("Socket connected:", socket.id);
+  });
 
-      setMessages((prev) => {
-        const isDuplicate = prev.some(
-          (msg) => msg.sender === newMessage.sender && msg.text === newMessage.text
-        );
-        if (isDuplicate) return prev;
+  socket.on("connect_error", (error: Error) => {
+    console.error("Socket connection error:", error.message, error.stack);
+    console.log("Transport used:", socket.io.opts.transports);
+  });
 
-        if (newMessage.sender === "Exam-AI" || newMessage.sender === "AI") {
-          const formattedLines = newMessage.text
-            .replace(/\*/g, "")
-            .replace(/\. /g, ".\n")
-            .split("\n")
-            .map((line) => line.trim())
-            .filter((line) => line !== "");
+  socket.on("errorMessage", (data: { error: string }) => {
+    console.error("Server error:", data.error);
+    setIsTyping(false);
+  });
 
-          // Speak each line with a delay to match the display
-          if (onAIResponse) {
-            formattedLines.forEach((line, index) => {
-              setTimeout(() => {
-                onAIResponse(line); // Pass each line to InputField.tsx to be spoken
-              }, index * 500);
-            });
-          }
+  socket.on("receiveMessage", (newMessage: Message) => {
+    console.log("📩 Received message from socket:", newMessage);
 
-          // Display each line with a delay
+    setMessages((prev) => {
+      const isDuplicate = prev.some(
+        (msg) => msg.sender === newMessage.sender && msg.text === newMessage.text
+      );
+      if (isDuplicate) return prev;
+
+      if (newMessage.sender === "Exam-AI" || newMessage.sender === "AI") {
+        setIsTyping(true);
+        const formattedLines = newMessage.text
+          .replace(/\*/g, "")
+          .replace(/\. /g, ".\n")
+          .split("\n")
+          .map((line) => line.trim())
+          .filter((line) => line !== "");
+
+        if (onAIResponse) {
           formattedLines.forEach((line, index) => {
             setTimeout(() => {
-              setMessages((prev) => {
-                const lineExists = prev.some(
-                  (msg) => msg.sender === newMessage.sender && msg.text === line
-                );
-                if (lineExists) return prev;
-                return [...prev, { sender: newMessage.sender, text: line }];
-              });
+              onAIResponse(line);
             }, index * 500);
           });
-          return prev;
         }
 
-        return [...prev, newMessage];
-      });
+        formattedLines.forEach((line, index) => {
+          setTimeout(() => {
+            setMessages((prevMessages) => {
+              const lineExists = prevMessages.some(
+                (msg) => msg.sender === newMessage.sender && msg.text === line
+              );
+              if (lineExists) return prevMessages;
+              return [...prevMessages, { sender: newMessage.sender, text: line }];
+            });
+            if (index === formattedLines.length - 1) {
+              setIsTyping(false);
+            }
+          }, index * 500);
+        });
+        return prev;
+      }
+
+      setIsTyping(false);
+      return [...prev, newMessage];
     });
+  });
 
-    return () => {
-      socket.off("receiveMessage");
-    };
-  }, [onAIResponse]); // Add onAIResponse to dependencies
+  return () => {
+    socket.disconnect();
+    console.log("Socket disconnected");
+  };
+}, [onAIResponse]);
 
+  // Create stable addMessage callback and notify parent
+  const addMessage = useCallback((message: Message) => {
+    setMessages((prev) => [...prev, message]);
+    
+    // IMPORTANT: Backend expects { userId, message, mode } format
+    // You need to extract userId and mode from somewhere (context, props, etc.)
+    // For now, using placeholder - UPDATE THIS based on your app's auth/context
+    if (socketRef.current) {
+      socketRef.current.emit("sendMessage", {
+        userId: "user_id_here", // TODO: Get from auth context/props
+        message: message.text,
+        mode: "chat", // TODO: Get actual mode (chat/exam/etc.)
+      });
+    }
+  }, []);
+
+  // Notify parent of addMessage function
+  useEffect(() => {
+    onSendMessage(addMessage);
+  }, [onSendMessage, addMessage]);
+
+  // Auto-scroll to latest message
   useEffect(() => {
     if (messages.length > 0 && scrollRef.current) {
       setTimeout(() => {
@@ -130,10 +169,10 @@ const ConversationContainer: React.FC<ConversationContainerProps> = ({ showChat,
                     >
                       <span className="text-xs font-semibold text-gray-500">{msg.sender}</span>
                       <div
-                        className={`p-3 rounded-lg shadow-md flex justify-between flex-col gap-1${
+                        className={`p-3 rounded-lg shadow-md flex justify-between flex-col gap-1 ${
                           isUser
-                            ? " bg-pink-100 text-black text-right self-end"
-                            : " bg-gray-300 text-black text-left self-start flex flex-col gap-1"
+                            ? "bg-pink-100 text-black text-right self-end"
+                            : "bg-gray-300 text-black text-left self-start flex flex-col gap-1"
                         }`}
                       >
                         {msg.text}

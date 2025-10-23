@@ -2,62 +2,79 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useUser, SignedIn } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
-import { Mic, Send } from "@deemlol/next-icons"; // Assuming you have icons for the mic and send buttons
+import { Mic, Send } from "@deemlol/next-icons";
+
+interface Message {
+  sender: string;
+  text: string;
+}
 
 const SpeechChat: React.FC = () => {
   const { user } = useUser();
   const router = useRouter();
-  const [messages, setMessages] = useState<{ sender: string; text: string }[]>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState<string>("");
   const [isListening, setIsListening] = useState<boolean>(false);
   const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const recognitionRef = useRef<any>(null); // Reference for SpeechRecognition
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const speechSynthesisRef = useRef<SpeechSynthesis | null>(null);
   const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:5000";
-  // Initialize SpeechRecognition
+
+  // Initialize SpeechRecognition and SpeechSynthesis
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SpeechRecognition) {
-        setError("Speech Recognition is not supported in this browser. Please use a modern browser like Chrome.");
-        return;
-      }
+    if (typeof window === "undefined") return;
 
-      recognitionRef.current = new SpeechRecognition();
-      recognitionRef.current.continuous = false;
-      recognitionRef.current.interimResults = false;
-      recognitionRef.current.lang = "en-US";
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      recognitionRef.current.onresult = (event: any) => {
-        const transcript = event.results[0][0].transcript;
-        setInputText(transcript);
-        setIsListening(false);
-      };
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      recognitionRef.current.onerror = (event: any) => {
-        console.error("Speech recognition error:", event.error);
-        setError("Error with speech recognition: " + event.error);
-        setIsListening(false);
-      };
-
-      recognitionRef.current.onend = () => {
-        setIsListening(false);
-      };
+    // Initialize SpeechRecognition
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setError("Speech Recognition is not supported in this browser. Please use a modern browser like Chrome.");
+      return;
     }
+
+    recognitionRef.current = new SpeechRecognition();
+    recognitionRef.current.continuous = false;
+    recognitionRef.current.interimResults = false;
+    recognitionRef.current.lang = "en-US";
+
+    recognitionRef.current.onresult = (event: SpeechRecognitionEvent) => {
+      const transcript = event.results[0][0].transcript;
+      setInputText(transcript);
+      setIsListening(false);
+    };
+
+    recognitionRef.current.onerror = (event: SpeechRecognitionErrorEvent) => {
+      console.error("Speech recognition error:", event.error);
+      setError(`Speech recognition error: ${event.error}`);
+      setIsListening(false);
+    };
+
+    recognitionRef.current.onend = () => {
+      setIsListening(false);
+    };
+
+    // Initialize SpeechSynthesis
+    speechSynthesisRef.current = window.speechSynthesis;
+
+    // Cleanup on unmount
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+      if (speechSynthesisRef.current) {
+        speechSynthesisRef.current.cancel();
+      }
+    };
   }, []);
 
   // Handle sending a message
   const handleSendMessage = async () => {
-    if (!inputText.trim()) return;
-    if (!user?.id) {
-      setError("User ID is not available. Please log in.");
+    if (!inputText.trim() || !user?.id) {
+      setError(!inputText.trim() ? "Please enter a message." : "User ID is not available. Please log in.");
       return;
     }
 
-    const newMessage = { sender: "User", text: inputText };
+    const newMessage: Message = { sender: "User", text: inputText };
     setMessages((prev) => [...prev, newMessage]);
     setInputText("");
 
@@ -69,12 +86,11 @@ const SpeechChat: React.FC = () => {
       });
 
       if (!response.ok) {
-        const errorData = await response.text();
-        throw new Error(errorData || "Failed to send message");
+        throw new Error(await response.text() || "Failed to send message");
       }
 
       const data = await response.json();
-      const aiMessage = { sender: "Exam-AI", text: data.answer };
+      const aiMessage: Message = { sender: "Exam-AI", text: data.answer };
       setMessages((prev) => [...prev, aiMessage]);
 
       // Speak the AI's response
@@ -95,30 +111,34 @@ const SpeechChat: React.FC = () => {
 
     if (isListening) {
       recognitionRef.current.stop();
-      setIsListening(false);
     } else {
       setError(null);
-      setIsListening(true);
       recognitionRef.current.start();
+      setIsListening(true);
     }
   };
 
   // Handle text-to-speech
   const speakText = (text: string) => {
-    if (typeof window !== "undefined" && "speechSynthesis" in window) {
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = "en-US";
-      utterance.onstart = () => setIsSpeaking(true);
-      utterance.onend = () => setIsSpeaking(false);
-      utterance.onerror = (event) => {
-        console.error("Speech synthesis error:", event.error);
-        setError("Error with speech synthesis: " + event.error);
-        setIsSpeaking(false);
-      };
-      window.speechSynthesis.speak(utterance);
-    } else {
+    if (!speechSynthesisRef.current || !("speechSynthesis" in window)) {
       setError("Speech Synthesis is not supported in this browser.");
+      return;
     }
+
+    // Cancel any ongoing speech
+    speechSynthesisRef.current.cancel();
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = "en-US";
+    utterance.onstart = () => setIsSpeaking(true);
+    utterance.onend = () => setIsSpeaking(false);
+    utterance.onerror = (event: SpeechSynthesisErrorEvent) => {
+      console.error("Speech synthesis error:", event.error);
+      setError(`Speech synthesis error: ${event.error}`);
+      setIsSpeaking(false);
+    };
+
+    speechSynthesisRef.current.speak(utterance);
   };
 
   // Handle form submission
@@ -133,7 +153,7 @@ const SpeechChat: React.FC = () => {
         <div className="bg-white rounded-xl shadow-lg w-full max-w-2xl p-6 flex flex-col h-[80vh]">
           <header className="flex justify-between items-center mb-4">
             <h1 className="text-2xl font-bold text-gray-800">Speech Chat with Examina AI</h1>
-            <button onClick={() => router.push("/")} className="text-gray-600">
+            <button onClick={() => router.push("/")} className="text-gray-600 hover:text-gray-800">
               Back
             </button>
           </header>
@@ -143,9 +163,9 @@ const SpeechChat: React.FC = () => {
             {messages.map((msg, index) => (
               <div
                 key={index}
-                className={`mb-2 p-2 rounded-lg ${
+                className={`mb-2 p-2 rounded-lg max-w-[80%] ${
                   msg.sender === "User" ? "bg-blue-100 ml-auto" : "bg-green-100 mr-auto"
-                } max-w-[80%]`}
+                }`}
               >
                 <span className="font-semibold">{msg.sender}:</span> {msg.text}
               </div>
@@ -175,7 +195,7 @@ const SpeechChat: React.FC = () => {
                 onClick={handleSpeechInput}
                 className={`absolute right-2 top-1/2 transform -translate-y-1/2 p-1 rounded-full ${
                   isListening ? "bg-red-500" : "bg-blue-500"
-                } text-white`}
+                } text-white hover:opacity-90`}
               >
                 <Mic size={24} />
               </button>

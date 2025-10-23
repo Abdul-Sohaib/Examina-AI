@@ -12,10 +12,6 @@ import ConversationContainer from "./ConversationContainer";
 import WhiteCanvas from "./WhiteCanvas";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:5000";
-const socket = io(BACKEND_URL, { transports: ["websocket"] });
-
-const options = ["Explain Topic", "Explore Questions", "Start a Test"];
-const testOptions = ["From Existing Paper", "From Current Topic"];
 
 interface Message {
   sender: "User" | "AI" | "Exam-AI";
@@ -24,6 +20,8 @@ interface Message {
 
 const InputField: React.FC = () => {
   const { userId } = useAuth();
+  const options = ["Explain Topic", "Explore Questions", "Start a Test"];
+  const testOptions = ["From Existing Paper", "From Current Topic"];
   const [inputValue, setInputValue] = useState("");
   const [showOptions, setShowOptions] = useState(false);
   const [selectedOption, setSelectedOption] = useState(options[0]);
@@ -37,7 +35,42 @@ const InputField: React.FC = () => {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [speechError, setSpeechError] = useState<string | null>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const socketRef = useRef<ReturnType<typeof io> | null>(null);
   const router = useRouter();
+
+  // Initialize Socket.IO
+  useEffect(() => {
+    socketRef.current = io(BACKEND_URL, {
+      path: "/socket.io/",
+      transports: ["polling"], // Force polling only
+      upgrade: false, // Explicitly disable WebSocket upgrade
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      timeout: 30000,
+    });
+
+    const socket = socketRef.current;
+
+    socket.on("connect", () => {
+      console.log("Socket connected in InputField:", socket.id);
+    });
+
+    socket.on("connect_error", (error: Error) => {
+      console.error("Socket connection error in InputField:", error.message, error.stack);
+      console.log("Transport used:", socket.io.opts.transports);
+    });
+
+    socket.on("errorMessage", (data: { error: string }) => {
+      console.error("Server error in InputField:", data.error);
+    });
+
+    return () => {
+      socket.disconnect();
+      console.log("Socket disconnected in InputField");
+    };
+  }, []);
 
   // Initialize SpeechRecognition
   useEffect(() => {
@@ -139,7 +172,7 @@ const InputField: React.FC = () => {
     }
 
     addMessage(userMessage);
-    socket.emit("sendMessage", { userId, message: inputValue, mode: selectedOption });
+    socketRef.current?.emit("sendMessage", { userId, message: inputValue, mode: selectedOption });
 
     console.log("Sending API requests with:", { userId, message: inputValue, mode: selectedOption });
 
@@ -219,8 +252,7 @@ const InputField: React.FC = () => {
             value={inputValue}
             className="w-full p-2 text-lg bg-transparent outline-none rounded-md text-black focus:border-gray-500 input-text tracking-wide transition"
             onChange={(e) => setInputValue(e.target.value)}
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
-            onKeyDown={(e) => e.key === "Enter" && handleSend((message) => {})}
+            onKeyDown={(e) => e.key === "Enter" && handleSend(() => {})}
             disabled={isLoading}
           />
         </div>
@@ -316,8 +348,7 @@ const InputField: React.FC = () => {
                   ? "hover:bg-gray-300 cursor-pointer"
                   : "text-gray-400 cursor-not-allowed"
               }`}
-              // eslint-disable-next-line @typescript-eslint/no-unused-vars
-              onClick={() => handleSend((message) => {})}
+              onClick={() => handleSend(() => {})}
               disabled={!inputValue.trim() || isLoading}
             >
               {isLoading ? (

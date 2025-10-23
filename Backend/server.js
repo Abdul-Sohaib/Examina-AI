@@ -66,18 +66,44 @@ const TestResult = mongoose.model("TestResult", testResultSchema);
 
 const app = express();
 const server = http.createServer(app);
+
+// Updated Socket.IO configuration for Vercel compatibility
+const allowedOrigins = [
+  FRONTEND_URL,
+  "https://examina-ai-t2ad.vercel.app",
+  "http://localhost:3000" // For local development
+];
+
 const io = new Server(server, {
-  cors: { 
-    origin: [FRONTEND_URL, "https://examina-ai-t2ad.vercel.app"], // Add both for safety
-    methods: ["GET", "POST"], 
-    credentials: true 
+  cors: {
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
+    methods: ["GET", "POST"],
+    credentials: true,
   },
+  transports: ["polling", "websocket"], // Prioritize polling for Vercel
+  allowEIO3: true, // Support for Socket.IO v3 clients
 });
 
-app.use(cors({ 
-  origin: [FRONTEND_URL, "https://examina-ai-t2ad.vercel.app"], 
-  credentials: true 
+// Enhanced CORS for Express
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
+  credentials: true,
+  methods: ["GET", "POST", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
 }));
+
 app.use(express.json());
 app.use("/api/searchHistory", searchHistoryRoutes);
 app.use("/api", chatRoutes);
@@ -166,6 +192,7 @@ app.post("/api/send-message", async (req, res) => {
     res.status(500).json({ error: "An internal error occurred. Try again later." });
   }
 });
+
 // Endpoint to save canvas drawings
 app.post("/api/save-canvas", async (req, res) => {
   try {
@@ -390,7 +417,12 @@ app.get("/api/questions", async (req, res) => {
 });
 
 io.on("connection", (socket) => {
-  console.log(` User connected: ${socket.id}`);
+  console.log(` User connected: ${socket.id}, Origin: ${socket.handshake.headers.origin}`);
+
+  // Debug connection issues
+  socket.on("connect_error", (error) => {
+    console.error(` Connection error for socket ${socket.id}:`, error.message);
+  });
 
   socket.on("sendMessage", async (data) => {
     try {
@@ -424,6 +456,8 @@ io.on("connection", (socket) => {
   });
 });
 
-server.listen(5000, () => {
-  console.log("🚀 Server running on http://localhost:5000");
+// Use Vercel's PORT environment variable
+const PORT = process.env.PORT || 5000;
+server.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
 });

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 import { useEffect, useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -14,7 +15,17 @@ interface ConversationContainerProps {
   onAIResponse?: (response: string) => void; // New prop to pass AI response
 }
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:5000";
-const socket = io(BACKEND_URL);
+const socket = io(BACKEND_URL, {
+  transports: ['polling', 'websocket'], // Prioritize polling
+});
+
+socket.on('connect', () => {
+  console.log('Socket connected:', socket.id);
+});
+
+socket.on('connect_error', (error: { message: any; }) => {
+  console.error('Socket connection error:', error.message);
+});
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const ConversationContainer: React.FC<ConversationContainerProps> = ({ showChat, onSendMessage, onAIResponse }) => {

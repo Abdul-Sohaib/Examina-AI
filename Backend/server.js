@@ -67,10 +67,17 @@ const TestResult = mongoose.model("TestResult", testResultSchema);
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: { origin: FRONTEND_URL, methods: ["GET", "POST"], credentials: true },
+  cors: { 
+    origin: [FRONTEND_URL, "https://examina-ai-t2ad.vercel.app"], // Add both for safety
+    methods: ["GET", "POST"], 
+    credentials: true 
+  },
 });
 
-app.use(cors({ origin: FRONTEND_URL, credentials: true }));
+app.use(cors({ 
+  origin: [FRONTEND_URL, "https://examina-ai-t2ad.vercel.app"], 
+  credentials: true 
+}));
 app.use(express.json());
 app.use("/api/searchHistory", searchHistoryRoutes);
 app.use("/api", chatRoutes);
